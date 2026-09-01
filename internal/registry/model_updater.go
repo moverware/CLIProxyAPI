@@ -183,6 +183,7 @@ func fetchModelsFromRemote(ctx context.Context) (*staticModelsJSON, string) {
 			log.Warnf("models validate failed from %s: %v", url, err)
 			continue
 		}
+		applyExtraModels(&parsed)
 
 		return &parsed, url
 	}
@@ -303,6 +304,7 @@ func loadModelsFromBytes(data []byte, source string) error {
 	if err := validateModelsCatalog(&parsed); err != nil {
 		return fmt.Errorf("%s: validate models catalog: %w", source, err)
 	}
+	applyExtraModels(&parsed)
 
 	modelsCatalogStore.mu.Lock()
 	modelsCatalogStore.data = &parsed
