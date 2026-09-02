@@ -433,7 +433,9 @@ func positiveWeightAuths(auths []*Auth) []*Auth {
 // Pick selects the next available auth using smooth weighted round-robin.
 func (s *WeightedRoundRobinSelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*Auth) (*Auth, error) {
 	_ = opts
-	available, errAvailable := getAvailableAuths(positiveWeightAuths(auths), provider, model, time.Now())
+	now := time.Now()
+	// FORK: exclude headroom-parked credentials while anything unparked can serve.
+	available, errAvailable := getAvailableAuths(headroomRoutableAuths(positiveWeightAuths(auths), model, now), provider, model, now)
 	if errAvailable != nil {
 		return nil, errAvailable
 	}
@@ -714,6 +716,9 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
 	if _, weighted := s.fallback.(*WeightedRoundRobinSelector); weighted {
 		availabilityCandidates = positiveWeightAuths(auths)
 	}
+	// FORK: pin validation and fallback selection both run over this set, so
+	// parking a credential evicts its established sessions too.
+	availabilityCandidates = headroomRoutableAuths(availabilityCandidates, model, now)
 	if primaryID == "" {
 		fallbackAuths, errAvailable := getAvailableAuths(availabilityCandidates, provider, model, now)
 		if errAvailable != nil {
