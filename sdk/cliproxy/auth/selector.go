@@ -434,8 +434,8 @@ func positiveWeightAuths(auths []*Auth) []*Auth {
 func (s *WeightedRoundRobinSelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*Auth) (*Auth, error) {
 	_ = opts
 	now := time.Now()
-	// FORK: exclude headroom-parked credentials while anything unparked can serve.
-	available, errAvailable := getAvailableAuths(headroomRoutableAuths(positiveWeightAuths(auths), model, now), provider, model, now)
+	// FORK: serve from the highest fallback rung that can (last_resort.go).
+	available, errAvailable := getAvailableAuths(routableAuths(positiveWeightAuths(auths), model, now), provider, model, now)
 	if errAvailable != nil {
 		return nil, errAvailable
 	}
@@ -717,8 +717,8 @@ func (s *SessionAffinitySelector) Pick(ctx context.Context, provider, model stri
 		availabilityCandidates = positiveWeightAuths(auths)
 	}
 	// FORK: pin validation and fallback selection both run over this set, so
-	// parking a credential evicts its established sessions too.
-	availabilityCandidates = headroomRoutableAuths(availabilityCandidates, model, now)
+	// a pin to a lower rung is evicted when a higher rung can serve again.
+	availabilityCandidates = routableAuths(availabilityCandidates, model, now)
 	if primaryID == "" {
 		fallbackAuths, errAvailable := getAvailableAuths(availabilityCandidates, provider, model, now)
 		if errAvailable != nil {

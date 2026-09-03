@@ -423,6 +423,11 @@ func TestBuildConfigChangeDetails_FlagsAndKeys(t *testing.T) {
 	expectContains(t, details, "xai.inject-x-search: false -> true")
 	expectContains(t, details, "api-keys count: 1 -> 2")
 	expectContains(t, details, "claude-api-key count: 1 -> 2")
+	lastResortDetails := BuildConfigChangeDetails(
+		&config.Config{ClaudeKey: []config.ClaudeKey{{APIKey: "k"}}},
+		&config.Config{ClaudeKey: []config.ClaudeKey{{APIKey: "k", LastResort: true}}},
+	)
+	expectContains(t, lastResortDetails, "claude[0].last-resort: false -> true")
 	expectContains(t, details, "codex-api-key count: 1 -> 2")
 	expectContains(t, details, "remote-management.disable-control-panel: false -> true")
 	expectContains(t, details, "remote-management.disable-auto-update-panel: false -> true")

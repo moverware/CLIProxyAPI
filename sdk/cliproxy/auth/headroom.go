@@ -4,18 +4,16 @@ package auth
 // top-level `headroom_parked` field into an auth file when that account's
 // weekly meter crosses the headroom cap — the last ~10% of each
 // subscription is kept for use from devices outside the proxy. A parked
-// credential must take no traffic, new sessions or established
-// session-affinity pins alike, while any unparked credential can still
-// serve; but it stays the fallback of last resort: when every unparked
-// credential is blocked (5h cooldown, weekly exhaustion), routing dips
-// into the parked set instead of failing the request. Manually disabled
-// credentials never serve either way — isAuthBlockedForModel blocks them
-// in this filter's availability probe and again in selection.
+// credential takes no traffic while anything on a higher rung can serve;
+// it is the final rung of the fallback order in last_resort.go, dipped
+// into only when every unparked and every last-resort credential is
+// blocked (5h cooldown, weekly exhaustion). Manually disabled credentials
+// never serve either way — isAuthBlockedForModel blocks them in the
+// availability probe and again in selection.
 
 import (
 	"strconv"
 	"strings"
-	"time"
 )
 
 func authHeadroomParked(auth *Auth) bool {
@@ -30,30 +28,4 @@ func authHeadroomParked(auth *Auth) bool {
 		return errParse == nil && parsed
 	}
 	return false
-}
-
-// headroomRoutableAuths narrows candidates to the unparked subset while at
-// least one unparked credential can serve the model right now; otherwise
-// it returns the full set so parked credentials catch the dip. Session
-// affinity validates pins against the same set, so a pin to a parked
-// credential is evicted the moment anything unparked can serve.
-func headroomRoutableAuths(auths []*Auth, model string, now time.Time) []*Auth {
-	unparked := make([]*Auth, 0, len(auths))
-	parkedSeen := false
-	for _, candidate := range auths {
-		if authHeadroomParked(candidate) {
-			parkedSeen = true
-			continue
-		}
-		unparked = append(unparked, candidate)
-	}
-	if !parkedSeen {
-		return auths
-	}
-	for _, candidate := range unparked {
-		if blocked, _, _ := isAuthBlockedForModel(candidate, model, now); !blocked {
-			return unparked
-		}
-	}
-	return auths
 }

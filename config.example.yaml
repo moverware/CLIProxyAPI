@@ -467,6 +467,7 @@ nonstream-keepalive-interval: 0
 #   - api-key: "sk-atSM..." # use the official claude API key, no need to set the base url
 #   - api-key: "sk-atSM..."
 #     weight: 5 # optional: weighted-round-robin share; omitted defaults to 1; maximum 1,000,000
+#     last-resort: false # optional: true = serve only when every ordinary credential is blocked (metered backstop behind subscription accounts)
 #     prefix: "test" # optional: require calls like "test/claude-sonnet-latest" to target this credential
 #     disable-cooling: false # optional override: true disables cooling, false enables it; omit to inherit global
 #     request-retry: 3 # optional per-auth override; 0 disables additional rounds; omit or set < 0 to inherit global

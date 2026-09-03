@@ -278,6 +278,33 @@ func TestConfigSynthesizer_ClaudeKeys(t *testing.T) {
 	}
 }
 
+func TestConfigSynthesizer_ClaudeKeys_LastResort(t *testing.T) {
+	synth := NewConfigSynthesizer()
+	ctx := &SynthesisContext{
+		Config: &config.Config{
+			ClaudeKey: []config.ClaudeKey{
+				{APIKey: "sk-ant-metered", LastResort: true},
+				{APIKey: "sk-ant-ordinary"},
+			},
+		},
+		Now:         time.Now(),
+		IDGenerator: NewStableIDGenerator(),
+	}
+	auths, err := synth.Synthesize(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(auths) != 2 {
+		t.Fatalf("expected 2 auths, got %d", len(auths))
+	}
+	if got := auths[0].Attributes[coreauth.AttributeLastResort]; got != "true" {
+		t.Fatalf("last-resort key: attribute = %q, want \"true\"", got)
+	}
+	if _, ok := auths[1].Attributes[coreauth.AttributeLastResort]; ok {
+		t.Fatalf("ordinary key must carry no last_resort attribute")
+	}
+}
+
 func TestConfigSynthesizer_ClaudeKeys_SkipsEmptyAndHeaders(t *testing.T) {
 	synth := NewConfigSynthesizer()
 	ctx := &SynthesisContext{

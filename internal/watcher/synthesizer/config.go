@@ -165,6 +165,9 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
 			attrs["priority"] = strconv.Itoa(ck.Priority)
 		}
 		addWeightToAttrs(ck.Weight, attrs)
+		if ck.LastResort {
+			attrs[coreauth.AttributeLastResort] = "true"
+		}
 		if base != "" {
 			attrs["base_url"] = base
 		}
