@@ -165,10 +165,15 @@ func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 		if len(tokenStorage.DeviceIDs) > 0 {
 			metadata[claude.ClaudeDeviceIDsMetadataKey] = append([]string(nil), tokenStorage.DeviceIDs...)
 		}
+		fileName, errName := claude.CredentialFileName(h.cfg.AuthDir, tokenStorage.Email, tokenStorage.OrganizationUUID)
+		if errName != nil {
+			SetOAuthSessionError(state, "Missing Claude organization identity")
+			return
+		}
 		record := &coreauth.Auth{
-			ID:       fmt.Sprintf("claude-%s.json", tokenStorage.Email),
+			ID:       fileName,
 			Provider: "claude",
-			FileName: fmt.Sprintf("claude-%s.json", tokenStorage.Email),
+			FileName: fileName,
 			Storage:  tokenStorage,
 			Metadata: metadata,
 		}

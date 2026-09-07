@@ -200,7 +200,10 @@ waitForCallback:
 		return nil, fmt.Errorf("claude token storage missing account information")
 	}
 
-	fileName := fmt.Sprintf("claude-%s.json", tokenStorage.Email)
+	fileName, err := claude.CredentialFileName(cfg.AuthDir, tokenStorage.Email, tokenStorage.OrganizationUUID)
+	if err != nil {
+		return nil, err
+	}
 	metadata := map[string]any{
 		"email": tokenStorage.Email,
 	}
