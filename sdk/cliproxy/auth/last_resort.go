@@ -11,7 +11,9 @@ package auth
 //
 //	1. ordinary credentials that are not headroom-parked
 //	2. last-resort credentials
-//	3. headroom-parked credentials (the reserved subscription tail)
+//	3. headroom-parked credentials (the reserved subscription tail),
+//	   minus any flagged headroom_no_dip — those leave routing entirely
+//	   while parked (headroom.go)
 //
 // The last-resort rung sits ahead of the headroom dip on purpose: the
 // parked tail exists for use off the proxy, and a metered key is the thing
@@ -51,13 +53,19 @@ func anyServable(auths []*Auth, model string, now time.Time) bool {
 // then the headroom-parked set. When no rung can serve, the full set is
 // returned so the caller reports the pool-wide cooldown as before. Session
 // affinity validates pins against the same set, so a pin to a lower rung is
-// evicted the moment a higher rung can serve again.
+// evicted the moment a higher rung can serve again. A parked credential
+// flagged headroom_no_dip is dropped before any rung is formed, so it is
+// absent from the dip and from the no-rung fallthrough alike; an empty
+// result is the caller's "no auth candidates" error.
 func routableAuths(auths []*Auth, model string, now time.Time) []*Auth {
 	ordinary := make([]*Auth, 0, len(auths))
 	lastResort := make([]*Auth, 0)
 	parked := make([]*Auth, 0)
+	reservedCount := 0
 	for _, candidate := range auths {
 		switch {
+		case authHeadroomReserved(candidate):
+			reservedCount++
 		case authHeadroomParked(candidate):
 			parked = append(parked, candidate)
 		case authLastResort(candidate):
@@ -65,6 +73,12 @@ func routableAuths(auths []*Auth, model string, now time.Time) []*Auth {
 		default:
 			ordinary = append(ordinary, candidate)
 		}
+	}
+	if reservedCount > 0 {
+		auths = make([]*Auth, 0, len(ordinary)+len(lastResort)+len(parked))
+		auths = append(auths, ordinary...)
+		auths = append(auths, lastResort...)
+		auths = append(auths, parked...)
 	}
 	if len(lastResort) == 0 && len(parked) == 0 {
 		return auths

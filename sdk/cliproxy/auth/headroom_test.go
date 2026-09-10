@@ -132,3 +132,64 @@ func TestDisabledParkedCredentialNeverCatchesTheDip(t *testing.T) {
 		t.Fatal("pick succeeded, want an error — a manually disabled credential must not serve the dip")
 	}
 }
+
+func headroomReservedTestAuth(id string, weight int64) *Auth {
+	auth := headroomTestAuth(id, weight, true)
+	auth.Metadata["headroom_no_dip"] = true
+	return auth
+}
+
+func TestWeightedPickNeverDipsIntoReservedCredential(t *testing.T) {
+	now := time.Now()
+	selector := &WeightedRoundRobinSelector{}
+	fresh := headroomTestAuth("fresh", 1_000_000, false)
+	blockAuthWithCooldown(fresh, now)
+	reserved := headroomReservedTestAuth("reserved", 1_000_000)
+	parked := headroomTestAuth("parked", 1, true)
+	picked, errPick := selector.Pick(context.Background(), "claude", "m", cliproxyexecutor.Options{}, []*Auth{fresh, reserved, parked})
+	if errPick != nil {
+		t.Fatalf("dip pick: %v", errPick)
+	}
+	if picked.ID != "parked" {
+		t.Fatalf("dip pick = %q, want the ordinary parked credential; the reserved one must never catch the dip", picked.ID)
+	}
+	if _, errPick = selector.Pick(context.Background(), "claude", "m", cliproxyexecutor.Options{}, []*Auth{fresh, reserved}); errPick == nil {
+		t.Fatal("pick succeeded, want an error — a reserved credential is the only servable one and must still not serve")
+	}
+}
+
+func TestReservedCredentialServesNormallyWhileUnparked(t *testing.T) {
+	selector := &WeightedRoundRobinSelector{}
+	only := headroomTestAuth("only", 1, false)
+	only.Metadata["headroom_no_dip"] = true
+	picked, errPick := selector.Pick(context.Background(), "claude", "m", cliproxyexecutor.Options{}, []*Auth{only})
+	if errPick != nil {
+		t.Fatalf("pick: %v", errPick)
+	}
+	if picked.ID != "only" {
+		t.Fatalf("pick = %q, want the no-dip credential to serve while it is not parked", picked.ID)
+	}
+}
+
+func TestAffinityEvictsPinFromReservedCredentialEvenWhenAllElseBlocked(t *testing.T) {
+	now := time.Now()
+	selector := newHeadroomAffinitySelector(t)
+	hot := headroomTestAuth("hot", 1_000_000, false)
+	hot.Metadata["headroom_no_dip"] = true
+	other := headroomTestAuth("other", 1, false)
+	opts := headroomAffinityOpts("reserved-session")
+
+	picked, errPick := selector.Pick(context.Background(), "claude", "m", opts, []*Auth{hot, other})
+	if errPick != nil {
+		t.Fatalf("cold pick: %v", errPick)
+	}
+	if picked.ID != "hot" {
+		t.Fatalf("cold pick = %q, want %q", picked.ID, "hot")
+	}
+
+	hot.Metadata["headroom_parked"] = true
+	blockAuthWithCooldown(other, now)
+	if _, errPick = selector.Pick(context.Background(), "claude", "m", opts, []*Auth{hot, other}); errPick == nil {
+		t.Fatal("pick succeeded, want an error — the pin must be evicted from the reserved credential and nothing else can serve")
+	}
+}
