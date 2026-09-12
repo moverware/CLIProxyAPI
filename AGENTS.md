@@ -2,6 +2,18 @@
 
 Go 1.26+ proxy server providing OpenAI/Gemini/Claude/Codex compatible APIs with OAuth and round-robin load balancing.
 
+## Working agreement for the moverware fork
+
+- Claude Code and Codex may commit and push authorized work directly, without
+  a feature branch, PR or separate permission request to push. This follows the
+  moverware-owned repository policy; lekondo repositories keep branches and PRs.
+- The fork's established deployment branch is `mover/extra-models-file`.
+  Commit directly to that branch and preserve its local patches. Do not merge
+  unrelated upstream branches into it or move it into `main` as routine cleanup.
+  On moverware repos using `main`, direct commits to `main` are permitted.
+- Never amend commits or force-push `main`, `master` or release branches.
+- Push to the moverware fork, not the upstream repository listed below.
+
 ## Repository
 - GitHub: https://github.com/router-for-me/CLIProxyAPI
 
