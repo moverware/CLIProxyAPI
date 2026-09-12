@@ -103,6 +103,13 @@ func (s *FileTokenStore) Save(ctx context.Context, auth *cliproxyauth.Auth) (str
 		return "", fmt.Errorf("auth filestore: create dir failed: %w", err)
 	}
 
+	if err = os.Chmod(filepath.Dir(path), 0o700); err != nil {
+		return "", fmt.Errorf("auth filestore: protect directory: %w", err)
+	}
+	if err = os.Chmod(path, 0o600); err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("auth filestore: protect existing file: %w", err)
+	}
+
 	// metadataSetter is a private interface for TokenStorage implementations that support metadata injection.
 	type metadataSetter interface {
 		SetMetadata(map[string]any)
@@ -150,6 +157,10 @@ func (s *FileTokenStore) Save(ctx context.Context, auth *cliproxyauth.Auth) (str
 		}
 	default:
 		return "", fmt.Errorf("auth filestore: nothing to persist for %s", auth.ID)
+	}
+
+	if err = os.Chmod(path, 0o600); err != nil {
+		return "", fmt.Errorf("auth filestore: protect saved file: %w", err)
 	}
 
 	if auth.Attributes == nil {
