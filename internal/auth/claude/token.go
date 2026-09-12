@@ -79,6 +79,10 @@ func (ts *ClaudeTokenStorage) SaveTokenToFile(authFilePath string) error {
 		return fmt.Errorf("failed to create directory: %v", err)
 	}
 
+	if err := os.Chmod(filepath.Dir(authFilePath), 0o700); err != nil {
+		return fmt.Errorf("protect credential directory: %w", err)
+	}
+
 	// Merge metadata using helper
 	data, errMerge := misc.MergeMetadata(ts, ts.Metadata)
 	if errMerge != nil {
@@ -86,7 +90,7 @@ func (ts *ClaudeTokenStorage) SaveTokenToFile(authFilePath string) error {
 	}
 
 	// Create the token file
-	f, err := os.Create(authFilePath)
+	f, err := os.OpenFile(authFilePath, os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to create token file: %w", err)
 	}
@@ -95,6 +99,13 @@ func (ts *ClaudeTokenStorage) SaveTokenToFile(authFilePath string) error {
 			log.Errorf("claude token storage: close token file error: %v", errClose)
 		}
 	}()
+
+	if err = f.Chmod(0o600); err != nil {
+		return fmt.Errorf("protect credential file: %w", err)
+	}
+	if err = f.Truncate(0); err != nil {
+		return fmt.Errorf("truncate credential file: %w", err)
+	}
 
 	// Encode and write the token data as JSON
 	if err = json.NewEncoder(f).Encode(data); err != nil {
