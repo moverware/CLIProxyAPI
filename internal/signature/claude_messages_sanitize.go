@@ -76,11 +76,19 @@ func SanitizeClaudeMessagesSignaturesForTarget(payload []byte, opts ClaudeMessag
 	messageResults := messages.Array()
 	keptMessages := make([]string, 0, len(messageResults))
 	modified := false
+	var pendingAssistant string
+	appendMessage := func(raw string) {
+		if pendingAssistant != "" && gjson.Get(raw, "role").String() != "assistant" {
+			keptMessages = append(keptMessages, pendingAssistant)
+		}
+		pendingAssistant = ""
+		keptMessages = append(keptMessages, raw)
+	}
 
 	for i, message := range messageResults {
 		content := message.Get("content")
 		if !content.IsArray() {
-			keptMessages = append(keptMessages, message.Raw)
+			appendMessage(message.Raw)
 			continue
 		}
 
@@ -168,14 +176,25 @@ func SanitizeClaudeMessagesSignaturesForTarget(payload []byte, opts ClaudeMessag
 		if messageModified {
 			modified = true
 			if len(keptParts) == 0 && opts.DropEmptyMessages {
+				// A non-directive system turn must precede an assistant or end
+				// the array. Preserve the turn boundary when removing its only
+				// assistant would strand it before a user or another system turn.
+				if targetProvider == SignatureProviderClaude && pendingAssistant == "" && message.Get("role").String() == "assistant" && len(keptMessages) > 0 {
+					previous := gjson.Parse(keptMessages[len(keptMessages)-1])
+					content := previous.Get("content")
+					directiveOnly := content.IsArray() && len(content.Array()) == 0 && previous.Get("output_config").IsObject() && len(previous.Map()) == 3
+					if previous.Get("role").String() == "system" && !directiveOnly {
+						pendingAssistant, _ = sjson.SetRaw(message.Raw, "content", `[{"type":"text","text":"[Thinking omitted]"}]`)
+					}
+				}
 				continue
 			}
 			updated, _ := sjson.SetRaw(message.Raw, "content", "["+strings.Join(keptParts, ",")+"]")
-			keptMessages = append(keptMessages, updated)
+			appendMessage(updated)
 			continue
 		}
 
-		keptMessages = append(keptMessages, message.Raw)
+		appendMessage(message.Raw)
 	}
 
 	if !modified {
