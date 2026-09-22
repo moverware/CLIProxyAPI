@@ -337,6 +337,74 @@ func TestResolveClaudeDeviceProfilePreservesConfirmedClientAtBaselineVersion(t *
 	}
 }
 
+func TestResolveClaudeDeviceProfilePreservesConfirmedClientOnePatchBehindBaseline(t *testing.T) {
+	ResetClaudeDeviceProfileCache()
+	cfg := &config.Config{ClaudeHeaderDefaults: config.ClaudeHeaderDefaults{
+		UserAgent:      "claude-cli/2.1.280 (external, cli)",
+		PackageVersion: "0.112.1",
+		RuntimeVersion: "v26.3.0",
+		OS:             "MacOS",
+		Arch:           "arm64",
+	}}
+	auth := &cliproxyauth.Auth{ID: "auth-patch-behind"}
+	headers := claudeDeviceHeaders("claude-cli/2.1.278 (external, cli)")
+	headers.Set("X-Stainless-Package-Version", "0.112.1")
+	headers.Set("X-Stainless-Runtime-Version", "v26.3.0")
+
+	profile := resolveClaudeDeviceProfileLocal(auth, "api-key", headers, cfg)
+	if profile.UserAgent != "claude-cli/2.1.278 (external, cli)" {
+		t.Fatalf("UserAgent = %q, want the client's own patch release preserved", profile.UserAgent)
+	}
+
+	// A different SDK package still disqualifies the tuple, whatever the patch.
+	foreign := claudeDeviceHeaders("claude-cli/2.1.278 (external, cli)")
+	foreign.Set("X-Stainless-Package-Version", "0.111.0")
+	foreign.Set("X-Stainless-Runtime-Version", "v26.3.0")
+	if profile := resolveClaudeDeviceProfileLocal(&cliproxyauth.Auth{ID: "auth-foreign-pkg"}, "api-key", foreign, cfg); profile.UserAgent != "claude-cli/2.1.280 (external, cli)" {
+		t.Fatalf("UserAgent = %q, want baseline for a foreign package version", profile.UserAgent)
+	}
+}
+
+func TestApplyClaudeLegacyDeviceHeadersKeepsPatchReleaseOfBaselineTrain(t *testing.T) {
+	request, errRequest := http.NewRequest(http.MethodPost, "https://api.anthropic.com/v1/messages", nil)
+	if errRequest != nil {
+		t.Fatal(errRequest)
+	}
+	cfg := &config.Config{ClaudeHeaderDefaults: config.ClaudeHeaderDefaults{
+		UserAgent:      "claude-cli/2.1.280 (external, cli)",
+		PackageVersion: "0.112.1",
+		RuntimeVersion: "v26.3.0",
+		OS:             "MacOS",
+		Arch:           "arm64",
+	}}
+	incoming := claudeDeviceHeaders("claude-cli/2.1.278 (external, cli)")
+	incoming.Set("X-Stainless-Package-Version", "0.112.1")
+	incoming.Set("X-Stainless-Runtime-Version", "v26.3.0")
+
+	ApplyClaudeLegacyDeviceHeaders(request, incoming, cfg, true)
+
+	if got := request.Header.Get("User-Agent"); got != "claude-cli/2.1.278 (external, cli)" {
+		t.Fatalf("User-Agent = %q, want the client's own patch release", got)
+	}
+
+	// The same patch release with a foreign SDK package falls back to the whole
+	// baseline tuple rather than pairing its own User-Agent with baseline headers.
+	foreignRequest, errForeign := http.NewRequest(http.MethodPost, "https://api.anthropic.com/v1/messages", nil)
+	if errForeign != nil {
+		t.Fatal(errForeign)
+	}
+	foreign := claudeDeviceHeaders("claude-cli/2.1.278 (external, cli)")
+	foreign.Set("X-Stainless-Package-Version", "0.111.0")
+	foreign.Set("X-Stainless-Runtime-Version", "v26.3.0")
+	ApplyClaudeLegacyDeviceHeaders(foreignRequest, foreign, cfg, true)
+	if got := foreignRequest.Header.Get("User-Agent"); got != "claude-cli/2.1.280 (external, cli)" {
+		t.Fatalf("User-Agent = %q, want baseline for a foreign package version", got)
+	}
+	if got := foreignRequest.Header.Get("X-Stainless-Package-Version"); got != "0.112.1" {
+		t.Fatalf("X-Stainless-Package-Version = %q, want baseline 0.112.1", got)
+	}
+}
+
 func TestResolveClaudeDeviceProfileSeparatesVSCodeAgentSDKFromCLI(t *testing.T) {
 	ResetClaudeDeviceProfileCache()
 	client := newFakeClaudeDeviceProfileKVClient()

@@ -212,8 +212,15 @@ func shouldUpgradeClaudeDeviceProfile(candidate, current ClaudeDeviceProfile) bo
 	return candidate.version.Compare(current.version) > 0
 }
 
+// plausibleClaudeCLIVersion accepts any patch release of the baseline's
+// major.minor train. The baseline tracks the newest client captured on this
+// host, but genuine clients run at neighbouring patch versions in the same
+// train: a pane keeps its older binary until it relaunches after a Claude Code
+// update, and a freshly updated client runs ahead of the baseline until the
+// next capture. Treating those as foreign would cloak them, rebuilding the
+// beta header from an older list and stripping the betas their bodies depend on.
 func plausibleClaudeCLIVersion(candidate, baseline claudeCLIVersion) bool {
-	return candidate.Compare(baseline) == 0
+	return candidate.major == baseline.major && candidate.minor == baseline.minor
 }
 
 func meetsClaudeDeviceProfileBaseline(candidate, baseline ClaudeDeviceProfile) bool {
@@ -235,7 +242,8 @@ func pinClaudeDeviceProfilePlatform(profile, baseline ClaudeDeviceProfile) Claud
 }
 
 // normalizeClaudeDeviceProfile pins stabilized profiles to the configured platform
-// and replaces any software tuple that does not exactly match the measured baseline.
+// and replaces any software tuple outside the measured baseline: a client version
+// off the baseline's major.minor train, or a package or runtime version that differs.
 func normalizeClaudeDeviceProfile(profile, baseline ClaudeDeviceProfile) ClaudeDeviceProfile {
 	profile = pinClaudeDeviceProfilePlatform(profile, baseline)
 	if !meetsClaudeDeviceProfileBaseline(profile, baseline) {
@@ -618,7 +626,18 @@ func ApplyClaudeLegacyDeviceHeaders(r *http.Request, ginHeaders http.Header, cfg
 		miscEnsure("X-Stainless-Package-Version", profile.PackageVersion, func(value string) bool { return value == profile.PackageVersion })
 		miscEnsure("X-Stainless-Os", mapStainlessOS(), nil)
 		miscEnsure("X-Stainless-Arch", mapStainlessArch(), nil)
-		if clientUA := strings.TrimSpace(ginHeaders.Get("User-Agent")); plausibleClaudeCodeUserAgent(clientUA, cfg) {
+		// The client keeps its own User-Agent only as part of a whole software
+		// tuple the baseline recognizes: a same-train version paired with a
+		// different SDK package or runtime would be sent upstream as a
+		// combination no real client produces, so the baseline replaces it.
+		matchesBaseline := func(name, want string) bool {
+			value := strings.TrimSpace(ginHeaders.Get(name))
+			return value == "" || value == want
+		}
+		clientUA := strings.TrimSpace(ginHeaders.Get("User-Agent"))
+		if plausibleClaudeCodeUserAgent(clientUA, cfg) &&
+			matchesBaseline("X-Stainless-Package-Version", profile.PackageVersion) &&
+			matchesBaseline("X-Stainless-Runtime-Version", profile.RuntimeVersion) {
 			r.Header.Set("User-Agent", clientUA)
 			return
 		}

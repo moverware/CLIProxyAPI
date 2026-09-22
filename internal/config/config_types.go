@@ -108,8 +108,9 @@ func defaultPluginInstanceConfigNode() *yaml.Node {
 }
 
 // ClaudeHeaderDefaults configures the measured Claude Code software baseline.
-// Verified native requests preserve their entrypoint and software shape only when their
-// Claude Code, package, and runtime versions exactly match this baseline; unmeasured
+// Verified native requests preserve their entrypoint and software shape when their
+// Claude Code version is a patch release of this baseline's major.minor train and
+// their package and runtime versions match this baseline exactly; other
 // versions use the configured values. Timeout remains a fallback. Stabilized profiles
 // also pin OS and Arch and never learn newer software versions automatically.
 type ClaudeHeaderDefaults struct {

@@ -99,6 +99,32 @@ func TestDetectClaudeCodeRequestAcceptsConfiguredMeasuredBaseline(t *testing.T) 
 	}
 }
 
+// A pane that has not relaunched since a Claude Code update runs one or two
+// patch releases behind the captured baseline; it is still the native client.
+func TestDetectClaudeCodeRequestConfirmsPatchReleasesOfBaselineTrain(t *testing.T) {
+	cfg := &config.Config{ClaudeHeaderDefaults: config.ClaudeHeaderDefaults{
+		UserAgent:      "claude-cli/2.1.280 (external, cli)",
+		PackageVersion: "0.112.1",
+		RuntimeVersion: "v26.3.0",
+	}}
+	payload := claudeCodeDetectionPayload(validClaudeCodeMetadataUserID)
+	for _, userAgent := range []string{
+		"claude-cli/2.1.278 (external, cli)",
+		"claude-cli/2.1.281 (external, cli)",
+	} {
+		headers := confirmedClaudeCodeHeaders()
+		headers.Set("User-Agent", userAgent)
+		if detection := DetectClaudeCodeRequest(headers, payload, false, cfg); !detection.Confirmed {
+			t.Fatalf("%s: detection = %#v, want same-train patch release confirmed", userAgent, detection)
+		}
+	}
+	headers := confirmedClaudeCodeHeaders()
+	headers.Set("User-Agent", "claude-cli/2.0.280 (external, cli)")
+	if detection := DetectClaudeCodeRequest(headers, payload, false, cfg); detection.Confirmed {
+		t.Fatalf("detection = %#v, want previous minor train rejected", detection)
+	}
+}
+
 func TestDetectClaudeCodeRequestRejectsEachMissingMessageSignal(t *testing.T) {
 	payload := claudeCodeDetectionPayload(validClaudeCodeMetadataUserID)
 	for _, test := range []struct {
