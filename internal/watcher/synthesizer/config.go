@@ -245,6 +245,9 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 			attrs["priority"] = strconv.Itoa(entry.Priority)
 		}
 		addWeightToAttrs(entry.Weight, attrs)
+		if entry.LastResort {
+			attrs[coreauth.AttributeLastResort] = "true"
+		}
 		if baseURL != "" {
 			attrs["base_url"] = baseURL
 		}

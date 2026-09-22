@@ -1,10 +1,11 @@
 package auth
 
 // FORK: last-resort credentials for the account pool. A credential whose
-// attributes carry last_resort=true (a claude-api-key entry with
-// `last-resort: true` in config.yaml) is a metered backstop — typically a
-// pay-per-token API key sitting behind a set of flat-rate subscription
-// accounts. It takes no traffic, new sessions or established
+// attributes carry last_resort=true (a claude-api-key or codex-api-key entry
+// with `last-resort: true` in config.yaml) is a metered backstop — typically
+// a pay-per-token API key sitting behind a set of flat-rate subscription
+// accounts. The rung is provider-agnostic: Claude and Codex each keep their
+// own subscription set and their own metered key. It takes no traffic, new sessions or established
 // session-affinity pins alike, while any ordinary unparked credential can
 // serve the model. Ordering of the fallback rungs when everything ahead is
 // blocked (5h cooldown, weekly exhaustion, disabled):

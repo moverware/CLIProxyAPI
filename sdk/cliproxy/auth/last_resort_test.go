@@ -103,3 +103,41 @@ func TestDisabledLastResortNeverServes(t *testing.T) {
 		t.Fatal("pick succeeded, want an error — a disabled last-resort key must not serve")
 	}
 }
+
+func codexLastResortTestAuth(id string, weight int64) *Auth {
+	return &Auth{
+		ID: id, Provider: "codex", Status: StatusActive,
+		Metadata:   map[string]any{"weight": weight},
+		Attributes: map[string]string{AttributeLastResort: "true", "api_key": "k", "base_url": "https://example.test/openai/v1"},
+	}
+}
+
+func codexSubscriptionTestAuth(id string, weight int64) *Auth {
+	return &Auth{ID: id, Provider: "codex", Status: StatusActive, Metadata: map[string]any{"weight": weight, "account_id": id}}
+}
+
+// The rung is provider-agnostic: a Codex API key marked last-resort waits
+// behind every subscription login exactly as the Claude key does.
+func TestCodexLastResortWaitsForSubscriptions(t *testing.T) {
+	now := time.Now()
+	selector := &WeightedRoundRobinSelector{}
+	sub := codexSubscriptionTestAuth("sub", 1)
+	key := codexLastResortTestAuth("key", 1_000_000)
+	for i := 0; i < 5; i++ {
+		picked, errPick := selector.Pick(context.Background(), "codex", "gpt-6-astra", cliproxyexecutor.Options{}, []*Auth{sub, key})
+		if errPick != nil {
+			t.Fatalf("pick: %v", errPick)
+		}
+		if picked.ID != "sub" {
+			t.Fatalf("pick = %q, want the subscription while it can serve", picked.ID)
+		}
+	}
+	blockAuthWithCooldown(sub, now)
+	picked, errPick := selector.Pick(context.Background(), "codex", "gpt-6-astra", cliproxyexecutor.Options{}, []*Auth{sub, key})
+	if errPick != nil {
+		t.Fatalf("overflow pick: %v", errPick)
+	}
+	if picked.ID != "key" {
+		t.Fatalf("overflow pick = %q, want the last-resort key once the subscription is blocked", picked.ID)
+	}
+}

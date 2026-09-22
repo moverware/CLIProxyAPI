@@ -472,6 +472,11 @@ type CodexKey struct {
 	// An omitted value defaults to 1; non-positive values exclude this credential; maximum 1,000,000.
 	Weight *int `yaml:"weight,omitempty" json:"weight,omitempty"`
 
+	// LastResort marks a metered backstop: the credential serves only when
+	// every ordinary (non-parked) credential is blocked, and ahead of the
+	// headroom-parked set. See sdk/cliproxy/auth/last_resort.go.
+	LastResort bool `yaml:"last-resort,omitempty" json:"last-resort,omitempty"`
+
 	// Prefix optionally namespaces models for this credential (e.g., "teamA/gpt-5-codex").
 	Prefix string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
 
