@@ -193,3 +193,63 @@ func TestAffinityEvictsPinFromReservedCredentialEvenWhenAllElseBlocked(t *testin
 		t.Fatal("pick succeeded, want an error — the pin must be evicted from the reserved credential and nothing else can serve")
 	}
 }
+
+func fableParkedAuth(id string, weight int64) *Auth {
+	auth := headroomTestAuth(id, weight, false)
+	auth.Metadata["headroom_parked_fable"] = true
+	return auth
+}
+
+func TestFableParkedCredentialStillServesOtherModels(t *testing.T) {
+	selector := &WeightedRoundRobinSelector{}
+	fableSpent := fableParkedAuth("fable-spent", 1_000_000)
+	fresh := headroomTestAuth("fresh", 1, false)
+	picked, errPick := selector.Pick(context.Background(), "claude", "claude-opus-5-5", cliproxyexecutor.Options{}, []*Auth{fableSpent, fresh})
+	if errPick != nil {
+		t.Fatalf("pick: %v", errPick)
+	}
+	if picked.ID != "fable-spent" {
+		t.Fatalf("opus pick = %q, want the Fable-parked credential (its all-models meter has room)", picked.ID)
+	}
+	picked, errPick = selector.Pick(context.Background(), "claude", "claude-fable-5-1[1m]", cliproxyexecutor.Options{}, []*Auth{fableSpent, fresh})
+	if errPick != nil {
+		t.Fatalf("pick: %v", errPick)
+	}
+	if picked.ID != "fresh" {
+		t.Fatalf("fable pick = %q, want the unparked credential", picked.ID)
+	}
+}
+
+func TestAllModelsParkAppliesToEveryModel(t *testing.T) {
+	selector := &WeightedRoundRobinSelector{}
+	parked := headroomTestAuth("parked", 1_000_000, true)
+	fresh := headroomTestAuth("fresh", 1, false)
+	for _, model := range []string{"claude-fable-5-1", "claude-opus-5-5"} {
+		picked, errPick := selector.Pick(context.Background(), "claude", model, cliproxyexecutor.Options{}, []*Auth{parked, fresh})
+		if errPick != nil {
+			t.Fatalf("pick %s: %v", model, errPick)
+		}
+		if picked.ID != "fresh" {
+			t.Fatalf("%s pick = %q, want fresh", model, picked.ID)
+		}
+	}
+}
+
+func TestReservedFableParkOnlyReservesFable(t *testing.T) {
+	now := time.Now()
+	selector := &WeightedRoundRobinSelector{}
+	phone := fableParkedAuth("phone", 1)
+	phone.Metadata["headroom_no_dip"] = true
+	other := headroomTestAuth("other", 1_000_000, false)
+	blockAuthWithCooldown(other, now)
+	picked, errPick := selector.Pick(context.Background(), "claude", "claude-opus-5-5", cliproxyexecutor.Options{}, []*Auth{phone, other})
+	if errPick != nil {
+		t.Fatalf("opus pick: %v", errPick)
+	}
+	if picked.ID != "phone" {
+		t.Fatalf("opus pick = %q, want phone (only its Fable headroom is reserved)", picked.ID)
+	}
+	if picked, errPick = selector.Pick(context.Background(), "claude", "claude-fable-5-1", cliproxyexecutor.Options{}, []*Auth{phone, other}); errPick == nil && picked.ID == "phone" {
+		t.Fatalf("fable request reached the reserved phone credential")
+	}
+}

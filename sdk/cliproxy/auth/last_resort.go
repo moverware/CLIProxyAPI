@@ -64,9 +64,9 @@ func routableAuths(auths []*Auth, model string, now time.Time) []*Auth {
 	reservedCount := 0
 	for _, candidate := range auths {
 		switch {
-		case authHeadroomReserved(candidate):
+		case authHeadroomReserved(candidate, model):
 			reservedCount++
-		case authHeadroomParked(candidate):
+		case authHeadroomParked(candidate, model):
 			parked = append(parked, candidate)
 		case authLastResort(candidate):
 			lastResort = append(lastResort, candidate)

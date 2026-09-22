@@ -16,20 +16,34 @@ package auth
 // never dipped into, even when every other rung is blocked. The flag
 // marks a subscription whose headroom belongs to its owner's own devices
 // (a personal phone account) rather than to the pool's overflow.
+//
+// Parking is per weekly meter. `headroom_parked` tracks the all-models
+// meter, which every model draws on; `headroom_parked_fable` tracks the
+// Fable-scoped meter, which only Fable draws on. A Fable request honors
+// both flags, any other model only the first, so an account whose Fable
+// allowance is spent keeps serving the other models from its remaining
+// all-models capacity.
 
 import (
 	"strconv"
 	"strings"
 )
 
-func authHeadroomParked(auth *Auth) bool {
-	return authMetadataFlag(auth, "headroom_parked")
+func authHeadroomParked(auth *Auth, model string) bool {
+	if authMetadataFlag(auth, "headroom_parked") {
+		return true
+	}
+	return modelDrawsFableMeter(model) && authMetadataFlag(auth, "headroom_parked_fable")
 }
 
-// authHeadroomReserved reports a parked credential that must never catch
-// the dip: parked AND flagged headroom_no_dip.
-func authHeadroomReserved(auth *Auth) bool {
-	return authHeadroomParked(auth) && authMetadataFlag(auth, "headroom_no_dip")
+// authHeadroomReserved reports a credential parked for this model that
+// must never catch the dip: parked AND flagged headroom_no_dip.
+func authHeadroomReserved(auth *Auth, model string) bool {
+	return authHeadroomParked(auth, model) && authMetadataFlag(auth, "headroom_no_dip")
+}
+
+func modelDrawsFableMeter(model string) bool {
+	return strings.Contains(strings.ToLower(model), "fable")
 }
 
 func authMetadataFlag(auth *Auth, key string) bool {
