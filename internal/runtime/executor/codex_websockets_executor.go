@@ -69,12 +69,16 @@ func (e *CodexAutoExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth
 		return cliproxyexecutor.Response{}, fmt.Errorf("codex auto executor: executor is nil")
 	}
 	if cliproxyexecutor.DownstreamWebsocket(ctx) && codexWebsocketsEnabled(auth) {
-		return e.wsExec.Execute(ctx, auth, req, opts)
+		return retryExecuteWithoutEncryptedContent(ctx, req, func(r cliproxyexecutor.Request) (cliproxyexecutor.Response, error) {
+			return e.wsExec.Execute(ctx, auth, r, opts)
+		})
 	}
 	if cliproxyexecutor.RequiredUpstreamWebsocket(ctx) {
 		return cliproxyexecutor.Response{}, cliproxyexecutor.NewUpstreamWebsocketReplayRequiredError()
 	}
-	return e.httpExec.Execute(ctx, auth, req, opts)
+	return retryExecuteWithoutEncryptedContent(ctx, req, func(r cliproxyexecutor.Request) (cliproxyexecutor.Response, error) {
+		return e.httpExec.Execute(ctx, auth, r, opts)
+	})
 }
 
 func (e *CodexAutoExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (*cliproxyexecutor.StreamResult, error) {
@@ -82,12 +86,16 @@ func (e *CodexAutoExecutor) ExecuteStream(ctx context.Context, auth *cliproxyaut
 		return nil, fmt.Errorf("codex auto executor: executor is nil")
 	}
 	if cliproxyexecutor.DownstreamWebsocket(ctx) && codexWebsocketsEnabled(auth) {
-		return e.wsExec.ExecuteStream(ctx, auth, req, opts)
+		return retryExecuteStreamWithoutEncryptedContent(ctx, req, func(r cliproxyexecutor.Request) (*cliproxyexecutor.StreamResult, error) {
+			return e.wsExec.ExecuteStream(ctx, auth, r, opts)
+		})
 	}
 	if cliproxyexecutor.RequiredUpstreamWebsocket(ctx) {
 		return nil, cliproxyexecutor.NewUpstreamWebsocketReplayRequiredError()
 	}
-	return e.httpExec.ExecuteStream(ctx, auth, req, opts)
+	return retryExecuteStreamWithoutEncryptedContent(ctx, req, func(r cliproxyexecutor.Request) (*cliproxyexecutor.StreamResult, error) {
+		return e.httpExec.ExecuteStream(ctx, auth, r, opts)
+	})
 }
 
 func (e *CodexAutoExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth) (*cliproxyauth.Auth, error) {

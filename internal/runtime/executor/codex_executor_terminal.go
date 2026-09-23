@@ -434,6 +434,9 @@ func isCodexHandshakeMetadataEvent(eventType string) bool {
 // change would alter cooldown classification and retry-after parsing for everyone. Keeping 503
 // scoped to this path means disabling the feature restores the previous behaviour exactly.
 func newCodexBootstrapOverloadErr(body []byte) statusErr {
+	if code, _, ok := codexStatusErrorClassification(http.StatusBadRequest, body); ok && code == "thinking_signature_invalid" {
+		return newCodexStatusErr(http.StatusBadRequest, body)
+	}
 	return newCodexStatusErr(http.StatusServiceUnavailable, body)
 }
 
@@ -444,6 +447,12 @@ func newCodexBootstrapOverloadErr(body []byte) statusErr {
 func isCodexOverloadBootstrapFailure(body []byte) bool {
 	errorType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "error.type").String()))
 	errorCode := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "error.code").String()))
+	if code, _, ok := codexStatusErrorClassification(http.StatusBadRequest, body); ok && code == "thinking_signature_invalid" {
+		// Replayed ciphertext the upstream cannot decrypt: the same request
+		// succeeds once the encrypted items are stripped, so the attempt is
+		// failed here and retried by the auto executor before headers commit.
+		return true
+	}
 	switch {
 	case errorType == "service_unavailable_error", errorCode == "server_is_overloaded":
 		return true
