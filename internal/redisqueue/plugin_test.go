@@ -22,6 +22,7 @@ func TestUsageQueuePluginPayloadIncludesStableFieldsAndSuccess(t *testing.T) {
 			XForwardedFor: "203.0.113.5, 198.51.100.8",
 			UserAgent:     "test-client/1.0",
 		})
+		ctx = internallogging.WithClientSession(ctx, "thread-1")
 		ctx = internallogging.WithResponseStatusHolder(ctx)
 		internallogging.SetResponseStatus(ctx, http.StatusOK)
 		responseHeaders := http.Header{}
@@ -64,6 +65,7 @@ func TestUsageQueuePluginPayloadIncludesStableFieldsAndSuccess(t *testing.T) {
 		requireStringField(t, payload, "access_token_sha256", "token-version-hash")
 		requireMissingField(t, payload, "user_api_key")
 		requireStringField(t, payload, "request_id", "ctx-request-id")
+		requireStringField(t, payload, "session_id", "thread-1")
 		requireStringField(t, payload, "client_ip", "192.0.2.10")
 		requireStringField(t, payload, "x_forwarded_for", "203.0.113.5, 198.51.100.8")
 		requireStringField(t, payload, "user_agent", "test-client/1.0")
