@@ -157,6 +157,7 @@ func TestDetectClaudeCodeRequestClassifiesEntrypoints(t *testing.T) {
 	}{
 		{name: "cli", userAgent: "claude-cli/2.1.220 (external, cli)", entrypoint: "cli", subclient: "claude-code-cli", native: true},
 		{name: "vscode-agent-sdk", userAgent: "claude-cli/2.1.220 (external, claude-vscode, agent-sdk/0.3.220)", entrypoint: "claude-vscode", subclient: "claude-code-vscode", agentSDKVersion: "0.3.220", native: true},
+		{name: "cli-cron-workload", userAgent: "claude-cli/2.1.220 (external, cli, workload/cron)", entrypoint: "cli", subclient: "claude-code-cli", native: true},
 		{name: "sdk-cli", userAgent: "claude-cli/2.1.220 (external, sdk-cli)", entrypoint: "sdk-cli", subclient: "claude-code-cli-sdk", native: true},
 		{name: "sdk-ts", userAgent: "claude-cli/2.1.220 (external, sdk-ts, agent-sdk/0.3.220)", entrypoint: "sdk-ts", subclient: "claude-code-sdk-ts", agentSDKVersion: "0.3.220"},
 		{name: "sdk-py", userAgent: "claude-cli/2.1.220 (external, sdk-py, agent-sdk/0.1.0)", entrypoint: "sdk-py", subclient: "claude-code-sdk-py", agentSDKVersion: "0.1.0"},
