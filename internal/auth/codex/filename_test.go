@@ -1,6 +1,47 @@
 package codex
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestCredentialFileNameForAccount(t *testing.T) {
+	authDir := t.TempDir()
+	personalFile := "codex-user@example.com-pro.json"
+	teamFile := "codex-user@example.com-team.json"
+	for name, content := range map[string]string{
+		personalFile:  `{"type":"codex","account_id":"personal","email":"user@example.com"}`,
+		teamFile:      `{"type":"codex","account_id":"team","email":"user@example.com"}`,
+		"broken.json": `{`,
+	} {
+		if errWrite := os.WriteFile(filepath.Join(authDir, name), []byte(content), 0o600); errWrite != nil {
+			t.Fatal(errWrite)
+		}
+	}
+	for _, tt := range []struct {
+		name, email, plan, accountID, want string
+	}{
+		{"plan upgrade", "user@example.com", "promax", "personal", personalFile},
+		{"email change", "new@example.com", "promax", "personal", personalFile},
+		{"same-email team", "user@example.com", "team", "team", teamFile},
+		{"new account", "user@example.com", "team", "new-team", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, errName := CredentialFileNameForAccount(authDir, tt.email, tt.plan, tt.accountID, true)
+			if errName != nil {
+				t.Fatal(errName)
+			}
+			if tt.want == "" {
+				if got == personalFile || got == teamFile {
+					t.Fatalf("distinct account reused %q", got)
+				}
+			} else if got != tt.want {
+				t.Fatalf("filename = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestCredentialFileName(t *testing.T) {
 	tests := []struct {

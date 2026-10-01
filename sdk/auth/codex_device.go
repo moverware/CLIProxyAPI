@@ -3,8 +3,6 @@ package auth
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -122,7 +120,7 @@ func (a *CodexAuthenticator) loginWithDeviceFlow(ctx context.Context, cfg *confi
 		return nil, codex.NewAuthenticationError(codex.ErrCodeExchangeFailed, err)
 	}
 
-	return a.buildAuthRecord(authSvc, authBundle)
+	return a.buildAuthRecord(cfg, authSvc, authBundle)
 }
 
 func requestCodexDeviceUserCode(ctx context.Context, client *http.Client) (*codexDeviceUserCodeResponse, error) {
@@ -251,7 +249,7 @@ func codexDeviceIsSuccessStatus(code int) bool {
 	return code >= 200 && code < 300
 }
 
-func (a *CodexAuthenticator) buildAuthRecord(authSvc *codex.CodexAuth, authBundle *codex.CodexAuthBundle) (*coreauth.Auth, error) {
+func (a *CodexAuthenticator) buildAuthRecord(cfg *config.Config, authSvc *codex.CodexAuth, authBundle *codex.CodexAuthBundle) (*coreauth.Auth, error) {
 	tokenStorage := authSvc.CreateTokenStorage(authBundle)
 
 	if tokenStorage == nil || tokenStorage.Email == "" {
@@ -259,19 +257,16 @@ func (a *CodexAuthenticator) buildAuthRecord(authSvc *codex.CodexAuth, authBundl
 	}
 
 	planType := ""
-	hashAccountID := ""
 	if tokenStorage.IDToken != "" {
 		if claims, errParse := codex.ParseJWTToken(tokenStorage.IDToken); errParse == nil && claims != nil {
 			planType = strings.TrimSpace(claims.CodexAuthInfo.ChatgptPlanType)
-			accountID := strings.TrimSpace(claims.CodexAuthInfo.ChatgptAccountID)
-			if accountID != "" {
-				digest := sha256.Sum256([]byte(accountID))
-				hashAccountID = hex.EncodeToString(digest[:])[:8]
-			}
 		}
 	}
 
-	fileName := codex.CredentialFileName(tokenStorage.Email, planType, hashAccountID, true)
+	fileName, errName := codex.CredentialFileNameForAccount(cfg.AuthDir, tokenStorage.Email, planType, tokenStorage.AccountID, true)
+	if errName != nil {
+		return nil, errName
+	}
 	metadata := map[string]any{
 		"email": tokenStorage.Email,
 	}

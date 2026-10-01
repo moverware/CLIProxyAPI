@@ -32,6 +32,11 @@ func MergeExistingAuthMetadata(target *Auth, existingMap map[string]any) {
 		}
 		if _, exists := target.Metadata[k]; !exists {
 			target.Metadata[k] = v
+			if k == "disabled" {
+				if disabled, ok := v.(bool); ok {
+					target.Disabled = disabled
+				}
+			}
 		}
 	}
 	if setter, ok := target.Storage.(interface{ SetMetadata(map[string]any) }); ok {

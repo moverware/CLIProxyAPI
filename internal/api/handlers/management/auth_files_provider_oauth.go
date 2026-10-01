@@ -2,8 +2,6 @@ package management
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -304,18 +302,18 @@ func (h *Handler) RequestCodexToken(c *gin.Context) {
 		// Extract additional info for filename generation
 		claims, _ := codex.ParseJWTToken(bundle.TokenData.IDToken)
 		planType := ""
-		hashAccountID := ""
 		if claims != nil {
 			planType = strings.TrimSpace(claims.CodexAuthInfo.ChatgptPlanType)
-			if accountID := claims.GetAccountID(); accountID != "" {
-				digest := sha256.Sum256([]byte(accountID))
-				hashAccountID = hex.EncodeToString(digest[:])[:8]
-			}
 		}
 
 		// Create token storage and persist
 		tokenStorage := openaiAuth.CreateTokenStorage(bundle)
-		fileName := codex.CredentialFileName(tokenStorage.Email, planType, hashAccountID, true)
+		fileName, errName := codex.CredentialFileNameForAccount(h.cfg.AuthDir, tokenStorage.Email, planType, tokenStorage.AccountID, true)
+		if errName != nil {
+			SetOAuthSessionError(state, "Failed to resolve authentication file")
+			log.Errorf("Failed to resolve Codex authentication file: %v", errName)
+			return
+		}
 		record := &coreauth.Auth{
 			ID:       fileName,
 			Provider: "codex",

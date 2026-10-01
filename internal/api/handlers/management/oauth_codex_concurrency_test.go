@@ -2,9 +2,11 @@ package management
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,13 +16,18 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 )
 
-type fakeCodexOAuthService struct{}
+type fakeCodexOAuthService struct {
+	bundle *codex.CodexAuthBundle
+}
 
 func (f *fakeCodexOAuthService) GenerateAuthURL(state string, pkceCodes *codex.PKCECodes) (string, error) {
 	return "https://auth.example.test/oauth?state=" + state, nil
 }
 
 func (f *fakeCodexOAuthService) ExchangeCodeForTokens(ctx context.Context, code string, pkceCodes *codex.PKCECodes) (*codex.CodexAuthBundle, error) {
+	if f.bundle != nil {
+		return f.bundle, nil
+	}
 	now := time.Now()
 	return &codex.CodexAuthBundle{
 		TokenData: codex.CodexTokenData{
@@ -32,6 +39,58 @@ func (f *fakeCodexOAuthService) ExchangeCodeForTokens(ctx context.Context, code 
 		},
 		LastRefresh: now.Format(time.RFC3339),
 	}, nil
+}
+
+func TestRequestCodexTokenReusesAccountFileAfterPlanChange(t *testing.T) {
+	authDir := t.TempDir()
+	personalFile := filepath.Join(authDir, "codex-user@example.com-pro.json")
+	teamFile := filepath.Join(authDir, "codex-user@example.com-team.json")
+	teamContent := []byte(`{"type":"codex","account_id":"team","email":"user@example.com","access_token":"team-access"}`)
+	for path, content := range map[string][]byte{
+		personalFile: []byte(`{"type":"codex","account_id":"personal","email":"user@example.com","access_token":"old-access","disabled":true,"weight":7}`),
+		teamFile:     teamContent,
+	} {
+		if errWrite := os.WriteFile(path, content, 0o600); errWrite != nil {
+			t.Fatal(errWrite)
+		}
+	}
+	claims := []byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"personal","chatgpt_plan_type":"promax"}}`)
+	bundle := &codex.CodexAuthBundle{TokenData: codex.CodexTokenData{
+		Email: "user@example.com", AccountID: "personal",
+		IDToken:     "e30." + base64.RawURLEncoding.EncodeToString(claims) + ".test",
+		AccessToken: "new-access", RefreshToken: "new-refresh",
+	}}
+	originalNewCodexOAuthService := newCodexOAuthService
+	newCodexOAuthService = func(*config.Config) codexOAuthService { return &fakeCodexOAuthService{bundle: bundle} }
+	defer func() { newCodexOAuthService = originalNewCodexOAuthService }()
+	handler := NewHandlerWithoutConfigFilePath(&config.Config{AuthDir: authDir}, nil)
+	router := gin.New()
+	router.GET("/codex-auth-url", handler.RequestCodexToken)
+	state := requestCodexTokenState(t, router)
+	defer CompleteOAuthSession(state)
+	if _, errWrite := WriteOAuthCallbackFileForPendingSession(authDir, "codex", state, "upgrade-code", ""); errWrite != nil {
+		t.Fatal(errWrite)
+	}
+	waitForOAuthSessionDone(t, state)
+	raw, errRead := os.ReadFile(personalFile)
+	if errRead != nil {
+		t.Fatal(errRead)
+	}
+	var saved map[string]any
+	if errDecode := json.Unmarshal(raw, &saved); errDecode != nil {
+		t.Fatal(errDecode)
+	}
+	if saved["access_token"] != "new-access" || saved["refresh_token"] != "new-refresh" || saved["disabled"] != true || saved["weight"] != float64(7) {
+		t.Fatal("web login did not replace credentials and preserve configured settings")
+	}
+	teamRaw, errReadTeam := os.ReadFile(teamFile)
+	if errReadTeam != nil || string(teamRaw) != string(teamContent) {
+		t.Fatal("same-email team credentials changed")
+	}
+	entries, _ := os.ReadDir(authDir)
+	if len(entries) != 2 {
+		t.Fatalf("auth directory contains %d files, want 2", len(entries))
+	}
 }
 
 func (f *fakeCodexOAuthService) CreateTokenStorage(bundle *codex.CodexAuthBundle) *codex.CodexTokenStorage {
