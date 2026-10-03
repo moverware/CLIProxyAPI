@@ -54,9 +54,10 @@ func (d *homeResponsesWebsocketDispatcher) RPopAuth(context.Context, string, str
 func (*homeResponsesWebsocketDispatcher) AbortAmbiguousDispatch() {}
 
 type homeResponsesWebsocketExecutor struct {
-	calls    atomic.Int32
-	metadata []map[string]any
-	mu       sync.Mutex
+	requestIDs []string
+	calls      atomic.Int32
+	metadata   []map[string]any
+	mu         sync.Mutex
 }
 
 func (*homeResponsesWebsocketExecutor) Identifier() string { return "codex" }
@@ -65,10 +66,11 @@ func (*homeResponsesWebsocketExecutor) Execute(context.Context, *coreauth.Auth, 
 	return coreexecutor.Response{}, errors.New("not implemented")
 }
 
-func (e *homeResponsesWebsocketExecutor) ExecuteStream(_ context.Context, _ *coreauth.Auth, _ coreexecutor.Request, opts coreexecutor.Options) (*coreexecutor.StreamResult, error) {
+func (e *homeResponsesWebsocketExecutor) ExecuteStream(ctx context.Context, _ *coreauth.Auth, _ coreexecutor.Request, opts coreexecutor.Options) (*coreexecutor.StreamResult, error) {
 	e.calls.Add(1)
 	e.mu.Lock()
 	e.metadata = append(e.metadata, maps.Clone(opts.Metadata))
+	e.requestIDs = append(e.requestIDs, requestlogging.GetRequestID(ctx))
 	e.mu.Unlock()
 	if lifecycle, ok := opts.ExecutionLifecycle.(interface{ Retain() }); ok {
 		lifecycle.Retain()
@@ -105,6 +107,10 @@ func TestResponsesWebsocketHomeSelectedAuthCallbackPinsAndReusesFirstSelection(t
 	base := handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, manager)
 	h := NewOpenAIResponsesAPIHandler(base)
 	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Request = c.Request.WithContext(requestlogging.WithRequestID(c.Request.Context(), "websocket-upgrade"))
+		c.Next()
+	})
 	router.GET("/v1/responses/ws", h.ResponsesWebsocket)
 	server := httptest.NewServer(router)
 	defer server.Close()
@@ -148,9 +154,16 @@ func TestResponsesWebsocketHomeSelectedAuthCallbackPinsAndReusesFirstSelection(t
 
 	executor.mu.Lock()
 	metadata := append([]map[string]any(nil), executor.metadata...)
+	requestIDs := append([]string(nil), executor.requestIDs...)
 	executor.mu.Unlock()
+	if len(requestIDs) != 2 || requestIDs[0] == "" || requestIDs[1] == "" || requestIDs[0] == requestIDs[1] || requestIDs[0] == "websocket-upgrade" || requestIDs[1] == "websocket-upgrade" {
+		t.Fatalf("response request IDs = %v, want two distinct IDs independent of the upgrade", requestIDs)
+	}
 	if len(metadata) != 2 {
 		t.Fatalf("executor metadata calls = %d, want 2", len(metadata))
+	}
+	if metadata[0][coreexecutor.ExecutionSessionMetadataKey] != metadata[1][coreexecutor.ExecutionSessionMetadataKey] {
+		t.Fatal("per-response accounting changed the execution session")
 	}
 	if got := metadata[1][coreexecutor.PinnedAuthMetadataKey]; got != "home-responses-websocket-auth" {
 		t.Fatalf("second turn pinned auth metadata = %#v, want home selected auth (first metadata: %#v, second metadata: %#v)", got, metadata[0], metadata[1])

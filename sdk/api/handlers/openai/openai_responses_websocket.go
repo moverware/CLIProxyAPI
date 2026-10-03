@@ -559,6 +559,8 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 		selectedAuthObserved := false
 		pinnedAuthAttempted := false
 		cliCtx, cliCancel := h.GetContextWithCancel(h, c, executionParent)
+		// Each response has its own usage record while the socket keeps its session.
+		cliCtx = logging.WithRequestID(cliCtx, uuid.NewString())
 		cliCtx = logging.WithClientSession(cliCtx, logging.ClientSessionFromRequest(requestJSON, c.Request.Header))
 		cliCtx = cliproxyexecutor.WithDownstreamWebsocket(cliCtx)
 		if nativeWebsocketPassthrough && requestRequiresCurrentUpstreamWebsocket {
