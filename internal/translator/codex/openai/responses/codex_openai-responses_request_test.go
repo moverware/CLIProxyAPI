@@ -678,3 +678,20 @@ func convertSystemRoleToDeveloperPreviousRootPathRewriteForBenchmark(rawJSON []b
 
 	return result
 }
+
+func TestConvertOpenAIResponsesRequestToCodexServiceTiers(t *testing.T) {
+	for _, tier := range []string{"priority", "ultrafast", "standard", "default", "unsupported"} {
+		t.Run(tier, func(t *testing.T) {
+			input := []byte(`{"model":"gpt-6-astra","input":[],"service_tier":"` + tier + `"}`)
+			output := ConvertOpenAIResponsesRequestToCodex("gpt-6-astra", input, true)
+			got := gjson.GetBytes(output, "service_tier")
+			if tier == "priority" || tier == "ultrafast" {
+				if got.String() != tier {
+					t.Fatalf("service tier = %q, want %q", got.String(), tier)
+				}
+			} else if got.Exists() {
+				t.Fatalf("unsupported service tier %q was retained", tier)
+			}
+		})
+	}
+}

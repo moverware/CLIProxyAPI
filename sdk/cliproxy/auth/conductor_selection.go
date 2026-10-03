@@ -58,6 +58,8 @@ type authSelectionEligibility struct {
 	requiredKind     string
 	credentialPolicy string
 	disallowFreeAuth bool
+	ultrafast        bool
+	pinnedAuthID     string
 }
 
 func withRequiredAuthKind(ctx context.Context, requiredKind string) context.Context {
@@ -77,7 +79,11 @@ func credentialPolicyFromContext(ctx context.Context) string {
 }
 
 func authSelectionEligibilityForRequest(ctx context.Context, opts cliproxyexecutor.Options) authSelectionEligibility {
-	eligibility := authSelectionEligibility{disallowFreeAuth: disallowFreeAuthFromMetadata(opts.Metadata)}
+	eligibility := authSelectionEligibility{
+		disallowFreeAuth: disallowFreeAuthFromMetadata(opts.Metadata),
+		ultrafast:        strings.EqualFold(serviceTierFromOptions(opts), "ultrafast"),
+		pinnedAuthID:     pinnedAuthIDFromMetadata(opts.Metadata),
+	}
 	if ctx != nil {
 		eligibility.requiredKind, _ = ctx.Value(requiredAuthKindContextKey{}).(string)
 		eligibility.credentialPolicy, _ = ctx.Value(credentialPolicyContextKey{}).(string)
@@ -94,6 +100,17 @@ func (e authSelectionEligibility) allows(auth *Auth) bool {
 	}
 	if e.credentialPolicy != "" && !credentialPolicyAllows(e.credentialPolicy, auth) {
 		return false
+	}
+	if e.ultrafast {
+		if auth.AuthKind() == AuthKindAPIKey {
+			// Metered credentials require an explicit API route or credential pin.
+			if e.requiredKind != AuthKindAPIKey && (e.pinnedAuthID == "" || e.pinnedAuthID != auth.ID) {
+				return false
+			}
+		} else if auth.AuthKind() != AuthKindOAuth || !strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") ||
+			!strings.EqualFold(authAttribute(auth, "plan_type"), "promax") {
+			return false
+		}
 	}
 	return !e.disallowFreeAuth || !isFreeCodexAuth(auth)
 }
