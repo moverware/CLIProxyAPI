@@ -119,6 +119,13 @@ func (e *CodexAutoExecutor) CloseExecutionSession(sessionID string) {
 	e.wsExec.CloseExecutionSession(sessionID)
 }
 
+func (e *CodexAutoExecutor) SendExecutionSessionControl(sessionID string, payload []byte) error {
+	if e == nil || e.wsExec == nil {
+		return cliproxyexecutor.NewUpstreamWebsocketReplayRequiredError()
+	}
+	return e.wsExec.SendExecutionSessionControl(sessionID, payload)
+}
+
 func (e *CodexAutoExecutor) UpstreamDisconnectChan(sessionID string) <-chan error {
 	if e == nil || e.wsExec == nil {
 		return nil

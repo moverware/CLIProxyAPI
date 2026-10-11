@@ -27,6 +27,7 @@ import (
 const (
 	wsRequestTypeCreate                   = "response.create"
 	wsRequestTypeAppend                   = "response.append"
+	wsRequestTypeInterrupt                = "response.interrupt"
 	wsEventTypeError                      = "error"
 	wsEventTypeCompleted                  = "response.completed"
 	wsEventTypeDone                       = "response.done"
@@ -250,7 +251,7 @@ func truncateWebsocketCloseReason(reason string, maxBytes int) string {
 }
 
 // ResponsesWebsocket handles websocket requests for /v1/responses.
-// It accepts `response.create` and `response.append` requests and streams
+// It accepts response requests and forwards Codex interrupt controls while streaming
 // response events back as JSON websocket text messages.
 func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 	conn, err := responsesWebsocketUpgrader.Upgrade(c.Writer, c.Request, websocketUpgradeHeaders(c.Request))
@@ -373,8 +374,32 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 		pinnedAuthID = ""
 	}
 
+	requests, controls, readErrors := readResponsesWebsocketMessages(conn, wsDone)
+	forwardControl := func(payload []byte) error {
+		wsTimelineLog.Append("control", payload, time.Now())
+		if h != nil && h.AuthManager != nil {
+			if exec, ok := h.AuthManager.Executor("codex"); ok {
+				if sender, ok := exec.(responsesWebsocketControlSender); ok {
+					return sender.SendExecutionSessionControl(passthroughSessionID, payload)
+				}
+			}
+		}
+		return cliproxyexecutor.NewUpstreamWebsocketReplayRequiredError()
+	}
 	for {
-		msgType, payload, errReadMessage := conn.ReadMessage()
+		var payload []byte
+		var errReadMessage error
+		select {
+		case payload = <-requests:
+		case control := <-controls:
+			if errControl := forwardControl(control); errControl != nil {
+				wsTerminateErr = errControl
+				writer.closeForUpstreamError(errControl)
+				return
+			}
+			continue
+		case errReadMessage = <-readErrors:
+		}
 		if errReadMessage != nil {
 			wsTerminateErr = errReadMessage
 			if websocket.IsCloseError(errReadMessage, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
@@ -383,9 +408,6 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 				// log.Warnf("responses websocket: read message failed id=%s error=%v", passthroughSessionID, errReadMessage)
 			}
 			return
-		}
-		if msgType != websocket.TextMessage && msgType != websocket.BinaryMessage {
-			continue
 		}
 		// log.Infof(
 		// 	"responses websocket: downstream_in id=%s type=%d event=%s payload=%s",
@@ -606,8 +628,11 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 			wsTimelineLog,
 			passthroughSessionID,
 			responsesWebsocketForwardOptions{
-				toolCacheTurn: toolCacheTurn,
-				suppressError: replayPinnedAuthFailure,
+				toolCacheTurn:  toolCacheTurn,
+				suppressError:  replayPinnedAuthFailure,
+				controls:       controls,
+				readErrors:     readErrors,
+				forwardControl: forwardControl,
 			},
 		)
 		if errForward != nil {

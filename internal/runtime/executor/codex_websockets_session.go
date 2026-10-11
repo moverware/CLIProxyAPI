@@ -474,6 +474,31 @@ func (e *CodexWebsocketsExecutor) getOrCreateSession(sessionID string) *codexWeb
 	return sess
 }
 
+// SendExecutionSessionControl writes to the existing connection without auth
+// selection, request normalization, another response, or a new usage record.
+func (e *CodexWebsocketsExecutor) SendExecutionSessionControl(sessionID string, payload []byte) error {
+	if e == nil {
+		return cliproxyexecutor.NewUpstreamWebsocketReplayRequiredError()
+	}
+	store := e.store
+	if store == nil {
+		store = globalCodexWebsocketSessionStore
+	}
+	store.mu.Lock()
+	sess := store.sessions[strings.TrimSpace(sessionID)]
+	store.mu.Unlock()
+	if sess == nil {
+		return cliproxyexecutor.NewUpstreamWebsocketReplayRequiredError()
+	}
+	sess.connMu.Lock()
+	conn := sess.conn
+	sess.connMu.Unlock()
+	if conn == nil {
+		return cliproxyexecutor.NewUpstreamWebsocketReplayRequiredError()
+	}
+	return sess.writeMessage(conn, websocket.TextMessage, payload)
+}
+
 func (e *CodexWebsocketsExecutor) UpstreamDisconnectChan(sessionID string) <-chan error {
 	sess := e.getOrCreateSession(sessionID)
 	if sess == nil {

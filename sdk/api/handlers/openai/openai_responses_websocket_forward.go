@@ -21,8 +21,11 @@ import (
 )
 
 type responsesWebsocketForwardOptions struct {
-	toolCacheTurn *responsesWebsocketToolCacheTurn
-	suppressError func(*interfaces.ErrorMessage) bool
+	toolCacheTurn  *responsesWebsocketToolCacheTurn
+	suppressError  func(*interfaces.ErrorMessage) bool
+	controls       <-chan []byte
+	readErrors     <-chan error
+	forwardControl func([]byte) error
 }
 
 func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
@@ -53,6 +56,15 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesWebsocket(
 
 	for {
 		select {
+		case errRead := <-opts.readErrors:
+			cancel(errRead)
+			return completedOutput, completedResponseID, sortedStringSet(pendingToolCallIDs), nil, errRead
+		case control := <-opts.controls:
+			if errControl := opts.forwardControl(control); errControl != nil {
+				writer.closeForUpstreamError(errControl)
+				cancel(errControl)
+				return completedOutput, completedResponseID, sortedStringSet(pendingToolCallIDs), nil, errControl
+			}
 		case <-c.Request.Context().Done():
 			cancel(c.Request.Context().Err())
 			return completedOutput, completedResponseID, sortedStringSet(pendingToolCallIDs), nil, c.Request.Context().Err()
