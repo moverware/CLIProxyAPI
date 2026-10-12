@@ -392,3 +392,27 @@ func TestCodexExecutorCacheHelper_ClaudeAgentScopeUsesResolvedModelAcrossHTTPAnd
 		t.Fatalf("HTTP/WebSocket prompt keys differ: http=%q websocket=%q", childKey, websocketKey)
 	}
 }
+
+func TestApplyCodexHeadersForwardsSubagentHeaders(t *testing.T) {
+	httpReq := httptest.NewRequest("POST", "https://example.com/responses", nil)
+	client := http.Header{}
+	client.Set("X-Openai-Subagent", "guardian")
+	client.Set("X-Codex-Parent-Thread-Id", "parent-thread-1")
+
+	applyCodexHeaders(httpReq, &cliproxyauth.Auth{Provider: "codex"}, "oauth-token", true, nil, client)
+
+	if got := httpReq.Header.Get("X-Openai-Subagent"); got != "guardian" {
+		t.Fatalf("X-Openai-Subagent = %q, want guardian", got)
+	}
+	if got := httpReq.Header.Get("X-Codex-Parent-Thread-Id"); got != "parent-thread-1" {
+		t.Fatalf("X-Codex-Parent-Thread-Id = %q, want parent-thread-1", got)
+	}
+
+	applyCodexIdentityConfuseHeaders(httpReq.Header, &codexIdentityConfuseState{enabled: true})
+	if got := httpReq.Header.Get("X-Codex-Parent-Thread-Id"); got != "" {
+		t.Fatalf("X-Codex-Parent-Thread-Id under identity confuse = %q, want empty", got)
+	}
+	if got := httpReq.Header.Get("X-Openai-Subagent"); got != "guardian" {
+		t.Fatalf("X-Openai-Subagent under identity confuse = %q, want guardian", got)
+	}
+}

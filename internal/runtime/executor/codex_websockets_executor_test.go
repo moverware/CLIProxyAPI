@@ -2400,3 +2400,18 @@ func TestCodexWebsocketsExecuteStreamHandshakeUsageLimitReachedSetsRetryAfter(t 
 		t.Fatalf("RetryAfter = %v, want 120s", got)
 	}
 }
+
+func TestApplyCodexWebsocketHeadersForwardsSubagentHeaders(t *testing.T) {
+	client := http.Header{}
+	client.Set("x-openai-subagent", "guardian")
+	client.Set("x-codex-parent-thread-id", "parent-thread-1")
+
+	headers := applyCodexWebsocketHeaders(context.Background(), http.Header{}, &cliproxyauth.Auth{Provider: "codex"}, "", nil, client)
+
+	if got := headers.Get("x-openai-subagent"); got != "guardian" {
+		t.Fatalf("x-openai-subagent = %q, want guardian", got)
+	}
+	if got := headers.Get("x-codex-parent-thread-id"); got != "parent-thread-1" {
+		t.Fatalf("x-codex-parent-thread-id = %q, want parent-thread-1", got)
+	}
+}
