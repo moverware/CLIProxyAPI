@@ -11,11 +11,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-	sdkconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
 	"github.com/tidwall/gjson"
 )
 
@@ -47,7 +47,7 @@ func (e *interruptWebsocketExecutor) ExecuteStream(ctx context.Context, _ *corea
 	return &coreexecutor.StreamResult{Chunks: chunks}, nil
 }
 
-func (e *interruptWebsocketExecutor) SendExecutionSessionControl(sessionID string, payload []byte) error {
+func (e *interruptWebsocketExecutor) InterruptExecutionSession(_ context.Context, sessionID string, payload []byte) error {
 	e.sessionID <- sessionID
 	e.control <- bytes.Clone(payload)
 	return nil
@@ -111,7 +111,7 @@ func TestResponsesWebsocketInterruptDuringActiveResponse(t *testing.T) {
 	}
 }
 
-func TestResponsesWebsocketInterruptWithoutUpstreamRequestsReplay(t *testing.T) {
+func TestResponsesWebsocketInterruptWithoutUpstreamReturnsError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := NewOpenAIResponsesAPIHandler(handlers.NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, coreauth.NewManager(nil, nil, nil)))
 	router := gin.New()
@@ -128,7 +128,7 @@ func TestResponsesWebsocketInterruptWithoutUpstreamRequestsReplay(t *testing.T) 
 		t.Fatal(err)
 	}
 	_, payload, err := conn.ReadMessage()
-	if !websocket.IsCloseError(err, websocket.CloseServiceRestart) {
-		t.Fatalf("payload=%s err=%v want replay close", payload, err)
+	if err != nil || gjson.GetBytes(payload, "type").String() != "error" {
+		t.Fatalf("payload=%s err=%v want interrupt error", payload, err)
 	}
 }

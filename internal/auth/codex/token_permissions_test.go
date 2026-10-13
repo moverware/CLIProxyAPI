@@ -17,7 +17,7 @@ func TestCredentialFilePermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "auth.json")
-	storage := &CodexTokenStorage{AccessToken: "synthetic-token", RefreshToken: "synthetic-refresh"}
+	storage := &CodexTokenStorage{AccessToken: "synthetic-token", RefreshToken: "synthetic-refresh", ReplaceCredentials: true}
 	for _, existing := range []bool{false, true} {
 		if existing {
 			if err := os.WriteFile(path, []byte(`{"access_token":"old-long-synthetic-token-to-detect-trailing-data"}`), 0o644); err != nil {

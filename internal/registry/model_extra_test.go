@@ -95,3 +95,26 @@ func TestMergeModelSectionSkipsNilAndEmptyIDs(t *testing.T) {
 		t.Fatalf("unexpected merge result: %+v", base)
 	}
 }
+
+func TestPublishCatalogBytesPreservesExtraModels(t *testing.T) {
+	original := getModels()
+	t.Cleanup(func() {
+		modelsCatalogStore.mu.Lock()
+		modelsCatalogStore.data = original
+		modelsCatalogStore.mu.Unlock()
+	})
+	overlayPath := filepath.Join(t.TempDir(), "extra.json")
+	if err := os.WriteFile(overlayPath, []byte(`{"codex-pro":[{"id":"overlay-codex","object":"model","type":"codex"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(extraModelsEnv, overlayPath)
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := publishCatalogBytes([]byte(`{"codex-pro":[{"id":"catalog-codex","object":"model","type":"codex"}]}`)); err != nil {
+			t.Fatal(err)
+		}
+		models := getModels().CodexPro
+		if len(models) != 2 || models[1].ID != "overlay-codex" {
+			t.Fatalf("published models = %#v, want catalog and overlay", models)
+		}
+	}
+}

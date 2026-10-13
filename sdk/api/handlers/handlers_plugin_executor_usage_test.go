@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
-	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
-	coreexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
-	sdkconfig "github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/auth"
+	coreexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/usage"
+	sdkconfig "github.com/router-for-me/CLIProxyAPI/v8/sdk/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
 
 type noopUsagePlugin struct{}
@@ -69,6 +69,48 @@ func registerUsagePluginForTest(t *testing.T, name string, plugin usage.Plugin) 
 	})
 }
 
+func TestHandlerPluginExecutorPublishesUsageNonStreamOpenAIResponseWithServiceTier(t *testing.T) {
+	targetPluginID := "custom-responses-plugin"
+	plugin := newCapturePluginExecutorUsagePlugin(targetPluginID)
+	registerUsagePluginForTest(t, "test-plugin-executor-usage-nonstream-responses-tier", plugin)
+
+	originalModel := "deepseek/deepseek-v4.1-flash"
+	responseBody := []byte(`{"id":"resp_1","object":"response","service_tier":"default","usage":{"input_tokens":34,"output_tokens":499,"total_tokens":533}}`)
+
+	mockHost := &mockPluginUsageHost{
+		execResp: coreexecutor.Response{Payload: responseBody},
+	}
+	mockHost.hasRouters = true
+	mockHost.route = func(ctx context.Context, req pluginapi.ModelRouteRequest) (pluginapi.ModelRouteResponse, bool) {
+		return pluginapi.ModelRouteResponse{Handled: true, TargetKind: pluginapi.ModelRouteTargetExecutor, Target: targetPluginID}, true
+	}
+
+	handler := NewBaseAPIHandlers(&sdkconfig.SDKConfig{}, nil)
+	handler.SetModelRouterHost(mockHost)
+
+	body, _, errMsg := handler.ExecuteWithAuthManager(context.Background(), "openai-response", originalModel, []byte(fmt.Sprintf(`{"model":%q}`, originalModel)), "")
+	if errMsg != nil {
+		t.Fatalf("ExecuteWithAuthManager() error = %+v", errMsg)
+	}
+	if len(body) == 0 {
+		t.Fatal("empty response body")
+	}
+
+	record := plugin.waitRecord(t)
+	if record.Provider != targetPluginID {
+		t.Errorf("record.Provider = %q, want %q", record.Provider, targetPluginID)
+	}
+	if record.Stream {
+		t.Errorf("record.Stream = true, want false")
+	}
+	if record.Detail.InputTokens != 34 || record.Detail.OutputTokens != 499 || record.Detail.TotalTokens != 533 {
+		t.Errorf("record.Detail = %+v, want input=34 output=499 total=533", record.Detail)
+	}
+	if record.Detail.ResponseServiceTier != "default" {
+		t.Errorf("record.Detail.ResponseServiceTier = %q, want default", record.Detail.ResponseServiceTier)
+	}
+}
+
 func TestHandlerPluginExecutorPublishesUsageNonStreamOpenAI(t *testing.T) {
 	targetPluginID := "custom-openai-plugin"
 	plugin := newCapturePluginExecutorUsagePlugin(targetPluginID)
@@ -102,6 +144,9 @@ func TestHandlerPluginExecutorPublishesUsageNonStreamOpenAI(t *testing.T) {
 	record := plugin.waitRecord(t)
 	if record.Provider != targetPluginID {
 		t.Errorf("record.Provider = %q, want %q", record.Provider, targetPluginID)
+	}
+	if record.Stream {
+		t.Errorf("record.Stream = true, want false")
 	}
 	if record.Detail.InputTokens != 12 || record.Detail.OutputTokens != 34 || record.Detail.TotalTokens != 46 {
 		t.Errorf("record.Detail = %+v, want prompt=12 completion=34 total=46", record.Detail)
@@ -144,6 +189,9 @@ func TestHandlerPluginExecutorPublishesUsageStreamOpenAI(t *testing.T) {
 	record := plugin.waitRecord(t)
 	if record.Provider != targetPluginID {
 		t.Errorf("record.Provider = %q, want %q", record.Provider, targetPluginID)
+	}
+	if !record.Stream {
+		t.Errorf("record.Stream = false, want true")
 	}
 	if record.Detail.InputTokens != 15 || record.Detail.OutputTokens != 25 || record.Detail.TotalTokens != 40 {
 		t.Errorf("record.Detail = %+v, want prompt=15 completion=25 total=40", record.Detail)

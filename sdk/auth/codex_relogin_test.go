@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/auth/codex"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 func TestCodexReloginReusesAccountFileAndSettings(t *testing.T) {
@@ -62,8 +62,17 @@ func TestCodexReloginReusesAccountFileAndSettings(t *testing.T) {
 			}
 		})
 	}
-	entries, _ := os.ReadDir(authDir)
-	if len(entries) != 2 {
-		t.Fatalf("auth directory contains %d files, want 2", len(entries))
+	entries, errReadDir := os.ReadDir(authDir)
+	if errReadDir != nil {
+		t.Fatal(errReadDir)
+	}
+	credentialCount := 0
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) == ".json" {
+			credentialCount++
+		}
+	}
+	if credentialCount != 2 {
+		t.Fatalf("auth directory contains %d credential files, want 2", credentialCount)
 	}
 }
