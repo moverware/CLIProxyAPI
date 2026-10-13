@@ -549,16 +549,16 @@ func TestCodexClientModelsResponseMapsMaxCompletionTokensToMaxTokens(t *testing.
 	}
 }
 
-func TestCodexClientModelsResponse_AstraServiceTiers(t *testing.T) {
-	response := BuildResponse([]map[string]any{{"id": "gpt-6-astra"}, {"id": "custom-codex-model-test"}}, nil, false)
+func TestCodexClientModelsResponse_UltrafastServiceTiers(t *testing.T) {
+	response := BuildResponse([]map[string]any{{"id": "gpt-6-astra"}, {"id": "gpt-6.1-sol"}, {"id": "custom-codex-model-test"}}, nil, false)
 	for _, model := range response["models"].([]map[string]any) {
 		tiers := model["service_tiers"].([]any)
-		if model["slug"] == "gpt-6-astra" {
+		if model["slug"] == "gpt-6-astra" || model["slug"] == "gpt-6.1-sol" {
 			if len(tiers) != 2 || tiers[0].(map[string]any)["id"] != "priority" || tiers[1].(map[string]any)["id"] != "ultrafast" {
-				t.Fatalf("Astra tiers = %#v, want priority and ultrafast", tiers)
+				t.Fatalf("%s tiers = %#v, want priority and ultrafast", model["slug"], tiers)
 			}
 		} else if len(tiers) != 0 {
-			t.Fatalf("unrelated model gained Astra service tiers: %#v", tiers)
+			t.Fatalf("unrelated model gained Ultrafast service tiers: %#v", tiers)
 		}
 	}
 }

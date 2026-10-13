@@ -1050,10 +1050,10 @@ func cloneCodexClientModelValue(value any) any {
 	}
 }
 
-// Astra exposes its speed tiers to catalog consumers. Subscription eligibility
+// Models with Ultrafast expose their speed tiers to catalog consumers. Eligibility
 // is checked separately for each request so premium traffic cannot spill over.
 func applyCodexClientServiceTiers(entry map[string]any, id string) {
-	if id != "gpt-6-astra" {
+	if id != "gpt-6-astra" && id != "gpt-6.1-sol" {
 		return
 	}
 	entry["service_tiers"] = []any{

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
@@ -188,5 +189,33 @@ func TestManagerUltrafastCooldownCannotSpillToSharedPool(t *testing.T) {
 	var cooldown *modelCooldownError
 	if selected != nil || !errors.As(errPick, &cooldown) {
 		t.Fatalf("ultrafast cooldown pick = %v, %v; want cooldown without shared-pool fallback", selected, errPick)
+	}
+}
+
+func TestManagerUltrafastModelsRequireProMax(t *testing.T) {
+	for _, model := range []string{"gpt-6-astra", "gpt-6.1-sol"} {
+		t.Run(model, func(t *testing.T) {
+			manager := NewManager(nil, &WeightedRoundRobinSelector{}, nil)
+			registerUltrafastTestAuths(t, manager, false)
+			catalog := registry.GetGlobalRegistry()
+			for _, candidate := range ultrafastTestAuths(false) {
+				catalog.RegisterClient(candidate.ID, candidate.Provider, []*registry.ModelInfo{{ID: model}})
+				t.Cleanup(func() { catalog.UnregisterClient(candidate.ID) })
+			}
+			opts := cliproxyexecutor.Options{Metadata: map[string]any{cliproxyexecutor.ServiceTierMetadataKey: "ultrafast"}}
+			selected, _, _, err := manager.pickNextMixed(context.Background(), []string{"codex", "openai-compatibility"}, model, opts, nil)
+			if err != nil || selected == nil || selected.ID != "pro-max" {
+				t.Fatalf("%s ultrafast pick = %v, %v; want pro-max", model, selected, err)
+			}
+			candidate := manager.auths["pro-max"].Clone()
+			candidate.Disabled = true
+			if _, err := manager.Update(WithSkipPersist(context.Background()), candidate); err != nil {
+				t.Fatal(err)
+			}
+			selected, _, _, err = manager.pickNextMixed(context.Background(), []string{"codex", "openai-compatibility"}, model, opts, nil)
+			if selected != nil || err == nil {
+				t.Fatalf("%s unavailable ultrafast pick = %v, %v; want rejection without fallback", model, selected, err)
+			}
+		})
 	}
 }
