@@ -98,11 +98,11 @@ func (p *usageQueuePlugin) HandleUsage(ctx context.Context, record coreusage.Rec
 	}
 	sessionID = coresession.NormalizeToCanonicalUUID(sessionID)
 	parentSessionID = coresession.NormalizeToCanonicalUUID(parentSessionID)
-	if sessionID == "" || sessionID == parentSessionID {
-		parentSessionID = ""
-	}
 	if clientSessionID := internallogging.GetClientSession(ctx); clientSessionID != "" {
 		sessionID = clientSessionID
+	}
+	if sessionID == "" || sessionID == parentSessionID {
+		parentSessionID = ""
 	}
 
 	usageDetail := coreusage.EnsureTokenBreakdownForProvider(record.Detail, record.Provider, record.ExecutorType)
