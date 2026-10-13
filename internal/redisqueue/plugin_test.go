@@ -23,6 +23,8 @@ func TestUsageQueuePluginPayloadIncludesStableFieldsAndSuccess(t *testing.T) {
 			ResolvedClientIP: "203.0.113.5",
 			XForwardedFor:    "203.0.113.5, 198.51.100.8",
 			UserAgent:        "test-client/1.0",
+			SessionID:        "pck:thread-1",
+			ParentSessionID:  "11111111-2222-4333-8444-555555555555",
 		})
 		ctx = internallogging.WithClientSession(ctx, "thread-1")
 		ctx = internallogging.WithResponseStatusHolder(ctx)
@@ -46,6 +48,7 @@ func TestUsageQueuePluginPayloadIncludesStableFieldsAndSuccess(t *testing.T) {
 			ServiceTier:         "auto",
 			ResponseServiceTier: "default",
 			ResponseModel:       "gpt-5.6-luna",
+			SessionID:           "pck:thread-1",
 			Generate:            coreusage.GenerateFlag(true),
 			RequestedAt:         time.Date(2026, 4, 25, 0, 0, 0, 0, time.UTC),
 			Latency:             1500 * time.Millisecond,
@@ -69,6 +72,7 @@ func TestUsageQueuePluginPayloadIncludesStableFieldsAndSuccess(t *testing.T) {
 		requireMissingField(t, payload, "user_api_key")
 		requireStringField(t, payload, "request_id", "ctx-request-id")
 		requireStringField(t, payload, "session_id", "thread-1")
+		requireStringField(t, payload, "parent_session_id", "11111111-2222-4333-8444-555555555555")
 		requireStringField(t, payload, "client_ip", "192.0.2.10")
 		requireStringField(t, payload, "resolved_client_ip", "203.0.113.5")
 		requireStringField(t, payload, "x_forwarded_for", "203.0.113.5, 198.51.100.8")

@@ -101,8 +101,8 @@ func (p *usageQueuePlugin) HandleUsage(ctx context.Context, record coreusage.Rec
 	if sessionID == "" || sessionID == parentSessionID {
 		parentSessionID = ""
 	}
-	if sessionID == "" {
-		sessionID = internallogging.GetClientSession(ctx)
+	if clientSessionID := internallogging.GetClientSession(ctx); clientSessionID != "" {
+		sessionID = clientSessionID
 	}
 
 	usageDetail := coreusage.EnsureTokenBreakdownForProvider(record.Detail, record.Provider, record.ExecutorType)
