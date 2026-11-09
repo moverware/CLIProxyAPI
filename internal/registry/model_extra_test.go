@@ -118,3 +118,40 @@ func TestPublishCatalogBytesPreservesExtraModels(t *testing.T) {
 		}
 	}
 }
+
+func TestReapplyExtraModelsAddsNewOverlayModels(t *testing.T) {
+	original := getModels()
+	t.Cleanup(func() {
+		modelsCatalogStore.mu.Lock()
+		modelsCatalogStore.data = original
+		modelsCatalogStore.mu.Unlock()
+	})
+	overlayPath := filepath.Join(t.TempDir(), "extra.json")
+	t.Setenv(extraModelsEnv, overlayPath)
+	if err := os.WriteFile(overlayPath, []byte(`{"claude":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := publishCatalogBytes([]byte(`{"claude":[{"id":"claude-fable-5-1","object":"model","type":"claude"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	published := getModels()
+
+	if changed := reapplyExtraModels(); changed != nil {
+		t.Fatalf("unchanged overlay reported changes %v", changed)
+	}
+
+	if err := os.WriteFile(overlayPath, []byte(`{"claude":[{"id":"claude-fable-5-2","object":"model","type":"claude"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changed := reapplyExtraModels()
+	if len(changed) != 1 || changed[0] != "claude" {
+		t.Fatalf("changed = %v, want [claude]", changed)
+	}
+	models := getModels().Claude
+	if len(models) != 2 || models[1].ID != "claude-fable-5-2" {
+		t.Fatalf("claude models = %#v, want catalog plus overlay", models)
+	}
+	if len(published.Claude) != 1 {
+		t.Fatalf("earlier snapshot mutated: %#v", published.Claude)
+	}
+}

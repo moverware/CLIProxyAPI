@@ -221,6 +221,7 @@ func StartModelCatalogUpdaters(ctx context.Context, sources CatalogSources, home
 	defer catalogRuntime.Unlock()
 	catalogRuntime.ctx = ctx
 	configureCatalogs(ctx, sources, catalogRuntime.local, home)
+	startExtraModelsWatcher(ctx)
 }
 
 // UpdateModelCatalogSources updates an already-started process policy on reload.

@@ -1,10 +1,14 @@
 package registry
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -16,6 +20,13 @@ import (
 // provider listing generated from that provider's own /v1/models endpoint
 // while the curated catalog remains authoritative for models it knows.
 const extraModelsEnv = "CLIPROXY_EXTRA_MODELS_FILE"
+
+// extraModelsPollInterval is how often the overlay file's mtime is checked.
+// The overlay's writer picks up a launch within minutes; the base catalog
+// refresh runs every few hours, too slow to wait on for a launch-day model.
+const extraModelsPollInterval = time.Minute
+
+var extraModelsWatchOnce sync.Once
 
 // applyExtraModels merges the overlay file (if configured and present) into
 // the parsed catalog in place. A missing file is not an error — the overlay
@@ -57,6 +68,69 @@ func applyExtraModels(parsed *staticModelsJSON) {
 	}
 }
 
+// startExtraModelsWatcher re-merges the overlay into the published catalog
+// whenever the file changes, for the lifetime of ctx.
+func startExtraModelsWatcher(ctx context.Context) {
+	path := strings.TrimSpace(os.Getenv(extraModelsEnv))
+	if path == "" {
+		return
+	}
+	extraModelsWatchOnce.Do(func() {
+		go watchExtraModels(ctx, path, extraModelsPollInterval)
+	})
+}
+
+func watchExtraModels(ctx context.Context, path string, interval time.Duration) {
+	last := extraModelsModTime(path)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			modTime := extraModelsModTime(path)
+			if modTime.Equal(last) {
+				continue
+			}
+			last = modTime
+			notifyModelRefresh(reapplyExtraModels())
+		}
+	}
+}
+
+func extraModelsModTime(path string) time.Time {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
+
+// reapplyExtraModels merges the overlay into the current catalog without
+// refetching the base catalog and returns the providers whose models changed.
+// Overlay entries only ever add ids, so a model dropped from the overlay stays
+// until the next full catalog refresh. The general updater's lock keeps this
+// from interleaving with a refresh's publish.
+func reapplyExtraModels() []string {
+	generalCatalogUpdater.mu.Lock()
+	defer generalCatalogUpdater.mu.Unlock()
+	current := getModels()
+	if current == nil {
+		return nil
+	}
+	next := *current
+	applyExtraModels(&next)
+	changed := detectChangedProviders(current, &next)
+	if len(changed) == 0 {
+		return nil
+	}
+	modelsCatalogStore.mu.Lock()
+	modelsCatalogStore.data = &next
+	modelsCatalogStore.mu.Unlock()
+	return changed
+}
+
 func loadExtraModels(path string) (*staticModelsJSON, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -78,6 +152,9 @@ func mergeModelSection(base *[]*ModelInfo, extra []*ModelInfo) int {
 	if len(extra) == 0 {
 		return 0
 	}
+	// Appends must not write into a backing array that a published catalog
+	// snapshot still shares.
+	*base = slices.Clip(*base)
 	seen := make(map[string]struct{}, len(*base))
 	for _, model := range *base {
 		if model == nil {
